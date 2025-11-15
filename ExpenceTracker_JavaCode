@@ -1,1 +1,254 @@
+import java.sql.*;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Scanner;
+
+class ExpenseTracker
+{
+    private double amount;
+    private String category;
+    private LocalDate date;
+    private String description
+
+    public ExpenseTracker(double amount, String category, LocalDate date, String description) {
+        this.amount = amount;
+        this.category = category;
+        this.date = date;
+        this.description = description;
+    }
+
+    public double getAmount() {
+        return amount;
+    }
+
+    public String getCategory() {
+        return category;
+    }
+
+    public LocalDate getDate() {
+        return date;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+    
+    public String toString() {
+        return String.format("Expense: $%.2f, Category: %s, Date: %s, Description: %s",
+                amount, category, date, description);
+    }
+}
+
+class ExpenseTracker {
+    private static final String DB_URL = "jdbc:mysql://localhost:3306/personalexpensetractor";
+    private static final String USER = "personalexpensetractor";
+    private static final String PASS = "Dewakar@sj17";
+    private Connection connection;
+
+    public ExpenseTracker() {
+        try {
+            // Load MySQL JDBC driver (optional for JDBC 4.0+)
+            Class.forName("com.mysql.cj.jdbc.Driver");
+            // Establish connection
+            connection = DriverManager.getConnection(DB_URL, USER, PASS);
+            System.out.println("Connected to the database!");
+        } catch (ClassNotFoundException e) {
+            System.out.println("MySQL JDBC Driver not found: " + e.getMessage());
+            System.exit(1);
+        } catch (SQLException e) {
+            System.out.println("Database connection failed: " + e.getMessage());
+            System.exit(1);
+        }
+    }
+
+    public void addExpense(double amount, String category, LocalDate date, String description) {
+        String sql = "INSERT INTO expenses (amount, category, expense_date, description) VALUES (?, ?, ?, ?)";
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setDouble(1, amount);
+            stmt.setString(2, category);
+            stmt.setDate(3, Date.valueOf(date));
+            stmt.setString(4, description);
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            System.out.println("Error adding expense: " + e.getMessage());
+        }
+    }
+
+    public void viewAllExpenses() {
+        String sql = "SELECT amount, category, expense_date, description FROM expenses ORDER BY category, expense_date";
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            HashMap<String, List<Expense>> expenses = new HashMap<>();
+            while (rs.next()) {
+                double amount = rs.getDouble("amount");
+                String category = rs.getString("category");
+                LocalDate date = rs.getDate("expense_date").toLocalDate();
+                String description = rs.getString("description");
+                expenses.computeIfAbsent(category, k -> new ArrayList<>())
+                        .add(new Expense(amount, category, date, description));
+            }
+            if (expenses.isEmpty()) {
+                System.out.println("No expenses recorded.");
+                return;
+            }
+            System.out.println("All Expenses:");
+            for (String category : expenses.keySet()) {
+                System.out.println("Category: " + category);
+                for (Expense expense : expenses.get(category)) {
+                    System.out.println("  " + expense);
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("Error viewing expenses: " + e.getMessage());
+        }
+    }
+
+    public void viewExpensesByCategory(String category) {
+        String sql = "SELECT amount, category, expense_date, description FROM expenses WHERE category = ? ORDER BY expense_date";
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, category);
+            try (ResultSet rs = stmt.executeQuery()) {
+                List<Expense> categoryExpenses = new ArrayList<>();
+                while (rs.next()) {
+                    double amount = rs.getDouble("amount");
+                    String cat = rs.getString("category");
+                    LocalDate date = rs.getDate("expense_date").toLocalDate();
+                    String description = rs.getString("description");
+                    categoryExpenses.add(new Expense(amount, cat, date, description));
+                }
+                if (categoryExpenses.isEmpty()) {
+                    System.out.println("No expenses in category: " + category);
+                    return;
+                }
+                System.out.println("Expenses in " + category + ":");
+                for (Expense expense : categoryExpenses) {
+                    System.out.println("  " + expense);
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("Error viewing category expenses: " + e.getMessage());
+        }
+    }
+
+    public void generateSummary() {
+        String sql = "SELECT category, SUM(amount) as total FROM expenses GROUP BY category";
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            double overallTotal = 0;
+            System.out.println("Expense Summary:");
+            while (rs.next()) {
+                String category = rs.getString("category");
+                double total = rs.getDouble("total");
+                overallTotal += total;
+                System.out.printf("Category: %s, Total: $%.2f%n", category, total);
+            }
+            if (overallTotal == 0) {
+                System.out.println("No expenses to summarize.");
+            } else {
+                System.out.printf("Overall Total: $%.2f%n", overallTotal);
+            }
+        } catch (SQLException e) {
+            System.out.println("Error generating summary: " + e.getMessage());
+        }
+    }
+
+    public void closeConnection() {
+        try {
+            if (connection != null && !connection.isClosed()) {
+                connection.close();
+                System.out.println("Database connection closed.");
+            }
+        } catch (SQLException e) {
+            System.out.println("Error closing connection: " + e.getMessage());
+        }
+    }
+
+    public static void main(String[] args) {
+        ExpenseTracker tracker = new ExpenseTracker();
+        Scanner scanner = new Scanner(System.in);
+
+        while (true) {
+            System.out.println("\nExpense Tracker Menu:");
+            System.out.println("1. Add Expense");
+            System.out.println("2. View All Expenses");
+            System.out.println("3. View Expenses by Category");
+            System.out.println("4. Generate Summary");
+            System.out.println("5. Exit");
+            System.out.print("Choose an option: ");
+
+            int choice;
+            try {
+                choice = Integer.parseInt(scanner.nextLine());
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid input. Enter a number.");
+                continue;
+            }
+
+            switch (choice) {
+                case 1:
+                    System.out.print("Enter amount: ");
+                    double amount;
+                    try {
+                        amount = Double.parseDouble(scanner.nextLine());
+                        if (amount <= 0) {
+                            System.out.println("Amount must be positive.");
+                            break;
+                        }
+                    } catch (NumberFormatException e) {
+                        System.out.println("Invalid amount. Enter a number.");
+                        break;
+                    }
+
+                    System.out.print("Enter category (e.g., Food, Transport): ");
+                    String category = scanner.nextLine().trim();
+                    if (category.isEmpty()) {
+                        System.out.println("Category cannot be empty.");
+                        break;
+                    }
+
+                    System.out.print("Enter date (YYYY-MM-DD, or press Enter for today): ");
+                    String dateStr = scanner.nextLine().trim();
+                    LocalDate date;
+                    try {
+                        date = dateStr.isEmpty() ? LocalDate.now() : LocalDate.parse(dateStr);
+                    } catch (DateTimeParseException e) {
+                        System.out.println("Invalid date format. Use YYYY-MM-DD.");
+                        break;
+                    }
+
+                    System.out.print("Enter description: ");
+                    String description = scanner.nextLine();
+                    tracker.addExpense(amount, category, date, description);
+                    System.out.println("Expense added.");
+                    break;
+
+                case 2:
+                    tracker.viewAllExpenses();
+                    break;
+
+                case 3:
+                    System.out.print("Enter category: ");
+                    String viewCategory = scanner.nextLine().trim();
+                    tracker.viewExpensesByCategory(viewCategory);
+                    break;
+
+                case 4:
+                    tracker.generateSummary();
+                    break;
+
+                case 5:
+                    System.out.println("Exiting Expense Tracker.");
+                    tracker.closeConnection();
+                    scanner.close();
+                    return;
+
+                default:
+                    System.out.println("Invalid option. Choose 1-5.");
+            }
+        }
+    }
+}
 
